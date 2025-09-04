@@ -23,7 +23,7 @@ jobs:
       - name: Build Docker image
         run: |
           cd cs-webapi
-          docker build -t my-webapi:latest .
+          docker build -t my-webapi-image:latest .
 
       - name: Save Docker image as artifact
         run: |
