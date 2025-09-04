@@ -51,7 +51,8 @@ jobs:
 
       - name: Load Docker image
         run: |
-          docker load -i my-webapi-image.tar.gz
+          gunzip my-webapi-image.tar.gz # Unzipping the image file
+          docker load -i my-webapi-image.tar
 
       - name: Create Docker network
         run: docker network create my-webapi-network
@@ -94,7 +95,8 @@ jobs:
 
       - name: Load Docker image
         run: |
-          docker load < my-webapi-image.tar.gz  # Shell reads file, pipes to docker. Instead of -i which makes Docker read the file directly.
+          gunzip my-webapi-image.tar.gz
+          docker load -i my-webapi-image.tar
 
       - name: Extract metadata
         id: meta
