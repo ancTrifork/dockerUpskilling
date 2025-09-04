@@ -11,12 +11,47 @@ on:
     branches: [ main ]
 
 jobs:
-  integration-test: # "integration-test" is the job name
+  build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        run: |
+          cd cs-webapi
+          docker build -t my-webapi:latest .
+
+      - name: Save Docker image as artifact
+        run: |
+          docker save my-webapi-image:latest | gzip > my-webapi-image.tar.gz
+          echo "Docker image saved as artifact: my-webapi-image.tar.gz"
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-webapi-image
+          path: my-webapi-image.tar.gz
+          retention-days: 1
+
+  integration-test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: my-webapi-image
+
+      - name: Load Docker image
+        run: |
+          docker load -i my-webapi-image.tar.gz
 
       - name: Create Docker network
         run: docker network create my-webapi-network
@@ -24,14 +59,14 @@ jobs:
       - name: Start services with Docker Compose
         run: |
           cd cs-webapi
-          docker compose up -d --build # -d : detached mode (runs in backround)
+          docker compose up -d
       
       - name: Wait for services to be ready
-        run: | # YAML - "run multiple lines"
+        run: |
           echo "Waiting for API to be ready..."
           sleep 30
-      
-      - name: Test Hello endpoint # YAML - "run multiple lines"
+
+      - name: Test Hello endpoint
         run: |
           response=$(curl -s http://localhost:5043/Hello)
           echo "Response: $response"
@@ -42,18 +77,25 @@ jobs:
             exit 1
           fi
 
-  build-and-publish:
+  publish:
     needs: integration-test
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Adds tags for the Docker image. This is done to enable easier versioning and identification of images.
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: my-webapi-image
+
+      - name: Load Docker image
+        run: |
+          docker load < my-webapi-image.tar.gz  # Shell reads file, pipes to docker. Instead of -i which makes Docker read the file directly.
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -65,13 +107,6 @@ jobs:
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
 
-      # Set up Docker Buildx. This is done to enable multi-platform builds.
-      # Docker Buildx is a Docker CLI plugin for extended build capabilities with BuildKit.
-      # This step ensures that the build environment is prepared for building images for multiple architectures.
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # Log in to the Docker registry. Github handles the authentication.
       - name: Log in to Container Registry
         uses: docker/login-action@v3
         with:
@@ -79,18 +114,96 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Builds from cs-webapi directory where the Dockerfile is.
-      # Pushes to the registry
-      # Uses the smart tags genereated in step 2 (Extract metadata)
-      # Uses GitHub Actions cache to speed up builds. This is done to reduce build times by caching intermediate layers.
-      # The Github Actions cache persists between jobs and can be shared across workflows.
-      # This means that if a job has already built a particular layer, it can reuse that layer in future builds.
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./cs-webapi
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Tag and push Docker image
+        run: | # Shell commands, not build action. We want to use the image uploaded, not build again. 
+          TAGS="${{ steps.meta.outputs.tags }}"
+          for tag in $TAGS; do
+            docker tag my-webapi-image:latest $tag  # Tag the EXISTING loaded image
+            docker push $tag                  # Push the TESTED image
+          done
+
+## Previous learnings:
+# jobs:
+#   integration-test: # "integration-test" is the job name
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Create Docker network
+#         run: docker network create my-webapi-network
+
+#       - name: Start services with Docker Compose
+#         run: |
+#           cd cs-webapi
+#           docker compose up -d --build # -d : detached mode (runs in backround)
+      
+#       - name: Wait for services to be ready
+#         run: | # YAML - "run multiple lines"
+#           echo "Waiting for API to be ready..."
+#           sleep 30
+      
+#       - name: Test Hello endpoint # YAML - "run multiple lines"
+#         run: |
+#           response=$(curl -s http://localhost:5043/Hello)
+#           echo "Response: $response"
+#           if [[ $response == *"Hello, World!"* ]]; then
+#             echo "✅ Hello endpoint test PASSED"
+#           else
+#             echo "❌ Hello endpoint test FAILED"
+#             exit 1
+#           fi
+
+#   build-and-publish:
+#     needs: integration-test
+#     runs-on: ubuntu-latest
+#     permissions:
+#       contents: read
+#       packages: write
+
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v4
+
+#       # Adds tags for the Docker image. This is done to enable easier versioning and identification of images.
+#       - name: Extract metadata
+#         id: meta
+#         uses: docker/metadata-action@v5
+#         with:
+#           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+#           tags: |
+#             type=ref,event=branch
+#             type=ref,event=pr
+#             type=sha,prefix={{branch}}-
+#             type=raw,value=latest,enable={{is_default_branch}}
+
+#       # Set up Docker Buildx. This is done to enable multi-platform builds.
+#       # Docker Buildx is a Docker CLI plugin for extended build capabilities with BuildKit.
+#       # This step ensures that the build environment is prepared for building images for multiple architectures.
+#       - name: Set up Docker Buildx
+#         uses: docker/setup-buildx-action@v3
+
+#       # Log in to the Docker registry. Github handles the authentication.
+#       - name: Log in to Container Registry
+#         uses: docker/login-action@v3
+#         with:
+#           registry: ${{ env.REGISTRY }}
+#           username: ${{ github.actor }}
+#           password: ${{ secrets.GITHUB_TOKEN }}
+
+#       # Builds from cs-webapi directory where the Dockerfile is.
+#       # Pushes to the registry
+#       # Uses the smart tags genereated in step 2 (Extract metadata)
+#       # Uses GitHub Actions cache to speed up builds. This is done to reduce build times by caching intermediate layers.
+#       # The Github Actions cache persists between jobs and can be shared across workflows.
+#       # This means that if a job has already built a particular layer, it can reuse that layer in future builds.
+#       - name: Build and push Docker image
+#         uses: docker/build-push-action@v5
+#         with:
+#           context: ./cs-webapi
+#           push: true
+#           tags: ${{ steps.meta.outputs.tags }}
+#           labels: ${{ steps.meta.outputs.labels }}
+#           cache-from: type=gha
+#           cache-to: type=gha,mode=max
