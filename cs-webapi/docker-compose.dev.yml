@@ -1,0 +1,41 @@
+services:
+  dev-webapi:
+  # If we add the image, it will override the build context and dockerfile.
+  # If we don't, it will use the build context and dockerfile to build it locally.
+    image: ${WEBAPI_IMAGE:-local-build}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dev-cs-webapi
+    ports:
+      - "5001:8080" # Different port to avoid conflicts
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=dev-db;Database=dev_mydatabase;Username=devuser;Password=devpass123
+    depends_on:
+      dev-db:
+        condition: service_healthy
+    networks:
+      - dev-network
+    restart: unless-stopped
+
+  dev-db:
+    image: postgres:15
+    container_name: dev-webapi-db
+    environment:
+      - POSTGRES_USER=devuser
+      - POSTGRES_PASSWORD=devpass123
+      - POSTGRES_DB=dev_mydatabase
+    ports:
+      - "5433:5432" # Different port to avoid conflicts
+    networks:
+      - dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devuser -d dev_mydatabase"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  dev-network:
+    name: dev-webapi-network

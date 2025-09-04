@@ -123,6 +123,62 @@ jobs:
             docker tag my-webapi-image:latest $tag  # Tag the EXISTING loaded image
             docker push $tag                  # Push the TESTED image
           done
+  
+  deploy-dev:
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: development # This creates a GitHub environment
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to Dev Environment
+        run: |
+          echo "Deploying to Development Environment..."
+
+          cd cs-webapi
+          
+          # Set environment variable to use published image
+          export WEBAPI_IMAGE=ghcr.io/anctrifork/dockerupskilling:latest
+          
+          # Start dev environment
+          docker compose -f docker-compose.dev.yml up -d
+          
+          echo "Dev environment deployed!"
+
+      - name: Wait for dev environment
+        run: |
+          echo "Waiting for dev environment to be ready..."
+          sleep 30
+          
+          # Check container status
+          docker ps
+      
+      - name: Test Dev Environment
+        run: |
+          echo "Testing dev environment..."
+          
+          # Test Hello endpoint
+          response=$(curl -s http://localhost:5001/Hello)
+          echo "Dev API Response: $response"
+          
+          if [[ $response == *"Hello, World!"* ]]; then
+            echo "Dev environment test PASSED"
+          else
+            echo "Dev environment test FAILED"
+            exit 1
+          fi
+          
+          # Test logs endpoint
+          curl -s http://localhost:5001/Hello/Logs
+          echo "Dev environment fully functional!"
+
+      - name: Cleanup Dev Environment
+        if: always()  # Always cleanup, even if tests fail
+        run: |
+          echo "Cleaning up dev environment..."
+          cd cs-webapi
+          docker compose -f docker-compose.dev.yml down -v
 
 ## Previous learnings:
 # jobs:
