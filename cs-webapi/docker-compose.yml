@@ -1,0 +1,38 @@
+services:
+  name-of-webapi-image:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: my-webapi #Run the image we just created in the Dockerfile.
+    pull_policy: never #Don't try to pull from registry, use local image
+    container_name: my-cs-webapi #Naming the container whatever we want.
+    ports:
+      - "5043:8080" #Map port 8080 in the container to port 5043 on the host machine.
+    restart: unless-stopped #Automatically restart the container unless it was manually stopped.
+    volumes:
+      - "./logs:/app/logs" # Connectes the /app/logs folder to the host machine's ./logs folder (in the directory of the docker-compose.yml file)
+    networks:
+      - my-webapi-network
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:15
+    container_name: my-webapi-db
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: mydatabase
+    ports:
+      - "5432:5432"
+    networks:
+      - my-webapi-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d mydatabase"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+networks:
+  my-webapi-network:
+    external: true

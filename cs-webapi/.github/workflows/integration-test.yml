@@ -1,0 +1,37 @@
+name: Integration Tests # Shows up on GitHub's Actions tab
+
+on:
+  push: #Runs when you push code to main branch
+    branches: [ main ]
+  pull_request: # Runs on pull requests to the main branch
+    branches: [ main ]
+
+jobs:
+  integration-test: # "integration-test" is the job name
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create Docker network
+        run: docker network create my-webapi-network
+
+      - name: Start services with Docker Compose
+        run: docker compose up -d --build # -d : detached mode (runs in backround)
+      
+      - name: Wait for services to be ready
+        run: | # YAML - "run multiple lines"
+          echo "Waiting for API to be ready..."
+          sleep 30
+      
+      - name: Test Hello endpoint # YAML - "run multiple lines"
+        run: |
+          response=$(curl -s http://localhost:5043/Hello)
+          echo "Response: $response"
+          if [[ $response == *"Hello, World!"* ]]; then
+            echo "✅ Hello endpoint test PASSED"
+          else
+            echo "❌ Hello endpoint test FAILED"
+            exit 1
+          fi
