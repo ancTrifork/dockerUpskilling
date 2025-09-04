@@ -18,7 +18,9 @@ jobs:
         run: docker network create my-webapi-network
 
       - name: Start services with Docker Compose
-        run: docker compose up -d --build # -d : detached mode (runs in backround)
+        run: |
+          cd cs-webapi
+          docker compose up -d --build # -d : detached mode (runs in backround)
       
       - name: Wait for services to be ready
         run: | # YAML - "run multiple lines"
