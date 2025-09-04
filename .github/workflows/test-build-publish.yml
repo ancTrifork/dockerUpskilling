@@ -51,14 +51,7 @@ jobs:
 
       - name: Load Docker image
         run: |
-          echo "Files in current directory:"
-          ls -la
-          echo "Checking if gunzip worked:"
-          gunzip my-webapi-image.tar.gz
-          ls -la
-          echo "Checking tar file integrity:"
-          file my-webapi-image.tar
-          echo "Attempting to load Docker image:"
+          gunzip my-webapi-image.tar.gz # Unzipping the image file
           docker load -i my-webapi-image.tar
 
       - name: Create Docker network
